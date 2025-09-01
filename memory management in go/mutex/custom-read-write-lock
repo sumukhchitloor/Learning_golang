@@ -1,0 +1,72 @@
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// Custom ReadWriteMutex implementation
+type ReadWriteMutex struct {
+	readersCounter int
+	readersLock    sync.Mutex
+	globalLock     sync.Mutex
+}
+
+func (rw *ReadWriteMutex) ReadLock() {
+	rw.readersLock.Lock()
+	rw.readersCounter++
+	if rw.readersCounter == 1 {
+		rw.globalLock.Lock() // First reader blocks writers
+	}
+	rw.readersLock.Unlock()
+}
+
+func (rw *ReadWriteMutex) ReadUnlock() {
+	rw.readersLock.Lock()
+	rw.readersCounter--
+	if rw.readersCounter == 0 {
+		rw.globalLock.Unlock() // Last reader unblocks writers
+	}
+	rw.readersLock.Unlock()
+}
+
+func (rw *ReadWriteMutex) WriteLock() {
+	rw.globalLock.Lock()
+}
+
+func (rw *ReadWriteMutex) WriteUnlock() {
+	rw.globalLock.Unlock()
+}
+
+func main() {
+	var rwMutex ReadWriteMutex
+	var data int
+	var wg sync.WaitGroup
+
+	// Start 3 readers
+	for i := 1; i <= 3; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			rwMutex.ReadLock()
+			fmt.Printf("Reader %d: data = %d\n", id, data)
+			time.Sleep(100 * time.Millisecond)
+			rwMutex.ReadUnlock()
+		}(i)
+	}
+
+	// Start 1 writer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		time.Sleep(50 * time.Millisecond) // Let readers start first
+		rwMutex.WriteLock()
+		data = 42
+		fmt.Printf("Writer: updated data to %d\n", data)
+		rwMutex.WriteUnlock()
+	}()
+
+	wg.Wait()
+	fmt.Printf("Final data: %d\n", data)
+}
